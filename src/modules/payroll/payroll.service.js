@@ -9,43 +9,60 @@ const createPayroll = async (payrollData, userId) => {
     include: { ship: true },
   });
 
-  // Calculate payroll entries
+  // Calculate payroll entries with proper Decimal handling
   const entries = employees.map(employee => {
-    const grossPay = employee.baseSalary + employee.allowances - employee.deductions;
-    const taxAmount = grossPay * (employee.taxRate / 100);
+    const baseSalary = parseFloat(employee.baseSalary);
+    const allowances = parseFloat(employee.allowances);
+    const deductions = parseFloat(employee.deductions);
+    const taxRate = parseFloat(employee.taxRate);
+
+    const grossPay = baseSalary + allowances - deductions;
+    const taxAmount = grossPay * (taxRate / 100);
     const netPay = grossPay - taxAmount;
 
     return {
       employeeId: employee.id,
-      baseSalary: employee.baseSalary,
-      allowances: employee.allowances,
-      deductions: employee.deductions,
-      taxAmount,
-      grossPay,
-      netPay,
+      baseSalary,
+      allowances,
+      deductions,
+      taxAmount: parseFloat(taxAmount.toFixed(2)),
+      grossPay: parseFloat(grossPay.toFixed(2)),
+      netPay: parseFloat(netPay.toFixed(2)),
     };
   });
 
   // Calculate totals
-  const totalGross = entries.reduce((sum, entry) => sum + entry.grossPay, 0);
-  const totalDeductions = entries.reduce((sum, entry) => sum + entry.deductions + entry.taxAmount, 0);
-  const totalNet = entries.reduce((sum, entry) => sum + entry.netPay, 0);
+  const totalGross = parseFloat(entries.reduce((sum, entry) => sum + entry.grossPay, 0).toFixed(2));
+  const totalDeductions = parseFloat(entries.reduce((sum, entry) => sum + entry.deductions + entry.taxAmount, 0).toFixed(2));
+  const totalNet = parseFloat(entries.reduce((sum, entry) => sum + entry.netPay, 0).toFixed(2));
 
-  // Create payroll with entries in transaction
-  const payroll = await prisma.$transaction(async (tx) => {
-    const payroll = await tx.payroll.create({
+  try {
+    // Create payroll
+    const createdPayroll = await prisma.payroll.create({
       data: {
         periodStart: new Date(periodStart),
         periodEnd: new Date(periodEnd),
         totalGross,
         totalDeductions,
         totalNet,
-        notes,
+        notes: notes || null,
         createdBy: userId,
-        entries: {
-          create: entries,
-        },
       },
+    });
+
+    // Create payroll entries
+    if (entries.length > 0) {
+      await prisma.payrollEntry.createMany({
+        data: entries.map(entry => ({
+          payrollId: createdPayroll.id,
+          ...entry,
+        })),
+      });
+    }
+
+    // Fetch complete payroll with relations
+    const payroll = await prisma.payroll.findUnique({
+      where: { id: createdPayroll.id },
       include: {
         entries: {
           include: {
@@ -67,9 +84,10 @@ const createPayroll = async (payrollData, userId) => {
     });
 
     return payroll;
-  });
-
-  return payroll;
+  } catch (error) {
+    console.error('Error creating payroll:', error);
+    throw error;
+  }
 };
 
 const getPayrolls = async (query) => {
