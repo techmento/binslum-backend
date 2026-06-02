@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
     "seed": "node prisma/seed.js",
+    "clean-db": "node prisma/clean-database.js",
     "test": "jest --detectOpenHandles"
   },
   "keywords": [

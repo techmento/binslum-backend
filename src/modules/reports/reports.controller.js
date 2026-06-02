@@ -72,10 +72,27 @@ const getLoanReport = async (req, res, next) => {
   }
 };
 
+const getFinancialSummary = async (req, res, next) => {
+  try {
+    const report = await reportsService.getFinancialSummary({
+      period:    req.query.period || 'ytd',
+      year:      req.query.year   ? parseInt(req.query.year)  : new Date().getFullYear(),
+      month:     req.query.month  ? parseInt(req.query.month) : new Date().getMonth() + 1,
+      shipId:    req.query.shipId || null,
+      startDate: req.query.startDate,
+      endDate:   req.query.endDate,
+    });
+    sendSuccess(res, report, 'Financial summary generated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfitLossReport,
   getShipPerformanceReport,
   getExpenseAnalysisReport,
   getIncomeAnalysisReport,
   getLoanReport,
+  getFinancialSummary,
 };

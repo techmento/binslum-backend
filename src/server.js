@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const errorHandler = require('./middlewares/error.middleware');
 const notFound = require('./middlewares/notFound.middleware');
+const { multerErrorHandler } = require('./middlewares/upload.middleware');
 
 // Import routes
 const authRoutes = require('./modules/auth/auth.routes');
@@ -15,7 +16,7 @@ const incomeRoutes = require('./modules/income/income.routes');
 const expenseRoutes = require('./modules/expenses/expenses.routes');
 const loanRoutes = require('./modules/loans/loans.routes');
 const reportRoutes = require('./modules/reports/reports.routes');
-const payrollRoutes = require('./modules/payroll/payroll.routes');
+const salaryRoutes = require('./modules/salary/salary.routes');
 
 const app = express();
 
@@ -57,7 +58,10 @@ app.use('/api/income', incomeRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/reports', reportRoutes);
-app.use('/api/payroll', payrollRoutes);
+app.use('/api/salary', salaryRoutes);
+
+// Multer error handling
+app.use(multerErrorHandler);
 
 // Error handling middleware
 app.use(notFound);

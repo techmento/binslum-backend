@@ -10,16 +10,24 @@ const createExpense = async (expenseData) => {
     paymentMethod,
     description,
     employeeId,
-    loanPaymentId,
+    loanId,
     receiptUrl,
     createdBy,
+    salaryMonth,
+    salaryPaymentType,
   } = expenseData;
 
-  // Validate category
-  if (!Object.values(EXPENSE_CATEGORIES).includes(category)) {
-    const error = new Error('Invalid expense category');
-    error.statusCode = 400;
-    throw error;
+  // Validate: category must be either a default or an existing custom category
+  const isDefaultCategory = Object.values(EXPENSE_CATEGORIES).includes(category);
+  if (!isDefaultCategory) {
+    const customCat = await prisma.customExpenseCategory.findUnique({
+      where: { name: category },
+    });
+    if (!customCat || !customCat.isActive) {
+      const error = new Error('Invalid expense category');
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   // Validate payment method
@@ -36,67 +44,61 @@ const createExpense = async (expenseData) => {
     throw error;
   }
 
-  // If category is LOAN_REPAYMENT, loanPaymentId is required
-  if (category === EXPENSE_CATEGORIES.LOAN_REPAYMENT && !loanPaymentId) {
-    const error = new Error('Loan payment ID is required for loan repayment expenses');
+  // If category is LOAN_REPAYMENT, loanId is required
+  if (category === EXPENSE_CATEGORIES.LOAN_REPAYMENT && !loanId) {
+    const error = new Error('Loan ID is required for loan repayment expenses');
     error.statusCode = 400;
     throw error;
   }
 
-  // Use transaction for loan repayment to update remaining balance
-  if (category === EXPENSE_CATEGORIES.LOAN_REPAYMENT && loanPaymentId) {
+  // For LOAN_REPAYMENT: create the loan payment record on the fly, then link the expense
+  if (category === EXPENSE_CATEGORIES.LOAN_REPAYMENT) {
     return await prisma.$transaction(async (tx) => {
-      // Get the loan payment
-      const loanPayment = await tx.loanPayment.findUnique({
-        where: { id: loanPaymentId },
-        include: { loan: true },
-      });
-
-      if (!loanPayment) {
-        const error = new Error('Loan payment not found');
+      const loan = await tx.loan.findUnique({ where: { id: loanId } });
+      if (!loan) {
+        const error = new Error('Loan not found');
         error.statusCode = 404;
         throw error;
       }
 
-      // Create expense record
+      // Create the loan payment record
+      const loanPayment = await tx.loanPayment.create({
+        data: {
+          loanId,
+          amountPaid: amount,
+          paymentDate: new Date(date),
+          notes: description || null,
+          createdBy,
+        },
+      });
+
+      // Update loan remaining balance (parseFloat handles Prisma Decimal → number)
+      const newRemainingBalance = Math.max(0, parseFloat(loan.remainingBalance.toString()) - parseFloat(amount.toString()));
+      await tx.loan.update({
+        where: { id: loanId },
+        data: {
+          remainingBalance: newRemainingBalance,
+          status: newRemainingBalance <= 0 ? 'PAID_OFF' : 'ACTIVE',
+        },
+      });
+
+      // Create the expense linked to the new loan payment
       const expense = await tx.expenseRecord.create({
         data: {
-          shipId,
           category,
           amount,
           date: new Date(date),
           paymentMethod,
           description,
-          loanPaymentId,
+          loanPaymentId: loanPayment.id,
           receiptUrl,
           createdBy,
         },
         include: {
           ship: true,
           employee: true,
-          loanPayment: {
-            include: {
-              loan: true,
-            },
-          },
-          creator: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-        },
-      });
-
-      // Update loan remaining balance
-      const newRemainingBalance = loanPayment.loan.remainingBalance - amount;
-
-      await tx.loan.update({
-        where: { id: loanPayment.loan.id },
-        data: {
-          remainingBalance: newRemainingBalance,
-          status: newRemainingBalance <= 0 ? 'PAID_OFF' : 'ACTIVE',
+          loanPayment: { include: { loan: true } },
+          creator: { select: { id: true, name: true, email: true } },
         },
       });
 
@@ -104,10 +106,10 @@ const createExpense = async (expenseData) => {
     });
   }
 
-  // Create regular expense
+  // Create regular expense (including custom categories)
   const expense = await prisma.expenseRecord.create({
     data: {
-      shipId,
+      ...(shipId && { shipId }),
       category,
       amount,
       date: new Date(date),
@@ -116,22 +118,14 @@ const createExpense = async (expenseData) => {
       employeeId,
       receiptUrl,
       createdBy,
+      salaryMonth: salaryMonth ? new Date(`${salaryMonth}-01`) : null,
+      salaryPaymentType: salaryPaymentType || null,
     },
     include: {
       ship: true,
       employee: true,
-      loanPayment: {
-        include: {
-          loan: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+      loanPayment: { include: { loan: true } },
+      creator: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -166,22 +160,10 @@ const getExpenses = async (filters) => {
     include: {
       ship: true,
       employee: true,
-      loanPayment: {
-        include: {
-          loan: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+      loanPayment: { include: { loan: true } },
+      creator: { select: { id: true, name: true, email: true } },
     },
-    orderBy: {
-      date: 'desc',
-    },
+    orderBy: { date: 'desc' },
     skip: (page - 1) * limit,
     take: parseInt(limit),
   });
@@ -205,18 +187,8 @@ const getExpenseById = async (id) => {
     include: {
       ship: true,
       employee: true,
-      loanPayment: {
-        include: {
-          loan: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+      loanPayment: { include: { loan: true } },
+      creator: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -248,13 +220,23 @@ const updateExpense = async (id, updateData, userId) => {
     description,
     employeeId,
     receiptUrl,
+    salaryMonth,
+    salaryPaymentType,
   } = updateData;
 
-  // Validate category if provided
-  if (category && !Object.values(EXPENSE_CATEGORIES).includes(category)) {
-    const error = new Error('Invalid expense category');
-    error.statusCode = 400;
-    throw error;
+  // Validate category if provided — allow both default and custom
+  if (category) {
+    const isDefault = Object.values(EXPENSE_CATEGORIES).includes(category);
+    if (!isDefault) {
+      const customCat = await prisma.customExpenseCategory.findUnique({
+        where: { name: category },
+      });
+      if (!customCat || !customCat.isActive) {
+        const error = new Error('Invalid expense category');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
   }
 
   // Validate payment method if provided
@@ -281,22 +263,14 @@ const updateExpense = async (id, updateData, userId) => {
       ...(description !== undefined && { description }),
       ...(employeeId !== undefined && { employeeId }),
       ...(receiptUrl !== undefined && { receiptUrl }),
+      ...(salaryMonth && { salaryMonth: new Date(salaryMonth) }),
+      ...(salaryPaymentType && { salaryPaymentType }),
     },
     include: {
       ship: true,
       employee: true,
-      loanPayment: {
-        include: {
-          loan: true,
-        },
-      },
-      creator: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+      loanPayment: { include: { loan: true } },
+      creator: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -314,13 +288,74 @@ const deleteExpense = async (id, userId) => {
     throw error;
   }
 
-  await prisma.expenseRecord.delete({
-    where: { id },
-  });
+  await prisma.expenseRecord.delete({ where: { id } });
 };
 
 const getExpenseCategories = async () => {
-  return Object.values(EXPENSE_CATEGORIES);
+  const defaultCategories = Object.values(EXPENSE_CATEGORIES).map((cat) => ({
+    name: cat,
+    label: cat.replace(/_/g, ' '),
+    isDefault: true,
+  }));
+
+  const customCategories = await prisma.customExpenseCategory.findMany({
+    where: { isActive: true },
+    select: {
+      name: true,
+      label: true,
+      color: true,
+      fade: true,
+      border: true,
+      id: true,
+      isActive: true,
+    },
+  });
+
+  return [...defaultCategories, ...customCategories];
+};
+
+const createCustomCategory = async (categoryData) => {
+  const { name, label, color, fade, border, createdBy } = categoryData;
+
+  if (Object.values(EXPENSE_CATEGORIES).includes(name)) {
+    const error = new Error('This category name already exists as a default category');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const existing = await prisma.customExpenseCategory.findUnique({
+    where: { name },
+  });
+
+  if (existing) {
+    const error = new Error('Custom category with this name already exists');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const newCategory = await prisma.customExpenseCategory.create({
+    data: {
+      name,
+      label,
+      color: color || '#7C3AED',
+      fade: fade || '#F5F3FF',
+      border: border || '#DDD6FE',
+      createdBy,
+      isActive: true,
+    },
+  });
+
+  return newCategory;
+};
+
+const getCustomCategories = async () => {
+  return await prisma.customExpenseCategory.findMany({
+    where: { isActive: true },
+    include: {
+      creator: { select: { id: true, name: true, email: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 };
 
 module.exports = {
@@ -330,4 +365,6 @@ module.exports = {
   updateExpense,
   deleteExpense,
   getExpenseCategories,
+  createCustomCategory,
+  getCustomCategories,
 };

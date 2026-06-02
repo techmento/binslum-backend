@@ -1,19 +1,20 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const asyncHandler = require('../../utils/asyncHandler');
 const validate = require('../../middlewares/validate.middleware');
 const authenticate = require('../../middlewares/auth.middleware');
 const authorize = require('../../middlewares/role.middleware');
+const { upload } = require('../../middlewares/upload.middleware');
 const employeesController = require('./employees.controller');
 const { createEmployeeSchema, updateEmployeeSchema, employeeQuerySchema } = require('./employees.validation');
 
 // All routes require authentication
 router.use(authenticate);
 
-// GET /api/employees - Get all employees (ACCOUNTANT and above)
+// GET /api/employees - Get all employees (all authenticated roles)
 router.get(
   '/',
-  authorize(['ADMIN', 'ACCOUNTANT']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   validate(employeeQuerySchema, 'query'),
   asyncHandler(employeesController.getEmployees)
 );
@@ -53,6 +54,21 @@ router.delete(
   '/:id',
   authorize(['ADMIN']),
   asyncHandler(employeesController.deleteEmployee)
+);
+
+// POST /api/employees/:id/documents - Upload document
+router.post(
+  '/:id/documents',
+  authorize(['ADMIN', 'ACCOUNTANT']),
+  upload.single('file'),
+  asyncHandler(employeesController.addDocument)
+);
+
+// DELETE /api/employees/:id/documents/:documentId - Delete document
+router.delete(
+  '/:id/documents/:documentId',
+  authorize(['ADMIN']),
+  asyncHandler(employeesController.deleteDocument)
 );
 
 module.exports = router;

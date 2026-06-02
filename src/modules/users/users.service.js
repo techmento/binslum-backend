@@ -1,138 +1,66 @@
 const bcryptjs = require('bcryptjs');
 const prisma = require('../../config/database');
 
+const userSelect = { id: true, name: true, email: true, role: true, isActive: true, createdAt: true, updatedAt: true };
+
 const createUser = async (data) => {
-  // Check if email already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { email: data.email },
-  });
-
-  if (existingUser) {
-    const error = new Error('Email already exists');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  // Hash password
+  const existing = await prisma.user.findUnique({ where: { email: data.email } });
+  if (existing) throw Object.assign(new Error('Email already exists'), { statusCode: 409 });
   const passwordHash = await bcryptjs.hash(data.password, 12);
-
-  // Create user
-  const user = await prisma.user.create({
-    data: {
-      name: data.name,
-      email: data.email,
-      passwordHash,
-      role: data.role || 'ACCOUNTANT',
-      isActive: true,
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-    },
+  return prisma.user.create({
+    data: { name: data.name, email: data.email, passwordHash, role: data.role || 'VIEWER', isActive: true },
+    select: userSelect,
   });
-
-  return user;
 };
 
 const getAllUsers = async (query) => {
-  const whereClause = {};
-
-  if (query.role) {
-    whereClause.role = query.role;
-  }
-
-  if (query.is_active !== undefined) {
-    whereClause.isActive = query.is_active === 'true';
-  }
-
-  const total = await prisma.user.count({ where: whereClause });
-
-  const users = await prisma.user.findMany({
-    where: whereClause,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-    },
-    orderBy: { createdAt: 'desc' },
-    take: query.limit,
-    skip: query.skip,
-  });
-
+  const where = {};
+  if (query.role) where.role = query.role;
+  if (query.is_active !== undefined) where.isActive = query.is_active === 'true';
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({ where, select: userSelect, orderBy: { createdAt: 'desc' }, take: query.limit, skip: query.skip }),
+    prisma.user.count({ where }),
+  ]);
   return { users, total };
 };
 
 const getUserById = async (userId) => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-
-  if (!user) {
-    const error = new Error('User not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: userSelect });
+  if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
   return user;
 };
 
 const updateUser = async (userId, data) => {
-  const user = await prisma.user.update({
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+  return prisma.user.update({
     where: { id: userId },
     data: {
-      name: data.name,
-      role: data.role,
-      isActive: data.isActive,
+      ...(data.name     !== undefined && { name: data.name }),
+      ...(data.role     !== undefined && { role: data.role }),
+      ...(data.isActive !== undefined && { isActive: data.isActive }),
     },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    select: userSelect,
   });
-
-  return user;
 };
 
 const softDeleteUser = async (userId) => {
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: { isActive: false },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      isActive: true,
-    },
-  });
-
-  return user;
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+  return prisma.user.update({ where: { id: userId }, data: { isActive: false }, select: userSelect });
 };
 
-module.exports = {
-  createUser,
-  getAllUsers,
-  getUserById,
-  updateUser,
-  softDeleteUser,
+const activateUser = async (userId) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+  return prisma.user.update({ where: { id: userId }, data: { isActive: true }, select: userSelect });
 };
+
+const resetPassword = async (userId, newPassword) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+  const passwordHash = await bcryptjs.hash(newPassword, 12);
+  return prisma.user.update({ where: { id: userId }, data: { passwordHash }, select: userSelect });
+};
+
+module.exports = { createUser, getAllUsers, getUserById, updateUser, softDeleteUser, activateUser, resetPassword };

@@ -3,10 +3,17 @@ const Joi = require('joi');
 const createEmployeeSchema = Joi.object({
   shipId: Joi.string()
     .uuid()
-    .required()
+    .optional()
+    .allow(null, '')
     .messages({
       'string.uuid': 'Ship ID must be a valid UUID',
-      'any.required': 'Ship ID is required',
+    }),
+  phone: Joi.string()
+    .max(30)
+    .optional()
+    .allow('', null)
+    .messages({
+      'string.max': 'Phone number must not exceed 30 characters',
     }),
   name: Joi.string()
     .max(150)
@@ -69,6 +76,13 @@ const updateEmployeeSchema = Joi.object({
     .messages({
       'string.uuid': 'Ship ID must be a valid UUID',
     }),
+  phone: Joi.string()
+    .max(30)
+    .optional()
+    .allow('', null)
+    .messages({
+      'string.max': 'Phone number must not exceed 30 characters',
+    }),
   name: Joi.string()
     .max(150)
     .optional()
@@ -119,11 +133,11 @@ const updateEmployeeSchema = Joi.object({
 }).min(1);
 
 const employeeQuerySchema = Joi.object({
-  shipId: Joi.string()
-    .uuid()
+  shipId: Joi.alternatives()
+    .try(Joi.string().uuid(), Joi.string().valid('OFFICE'))
     .optional()
     .messages({
-      'string.uuid': 'Ship ID must be a valid UUID',
+      'alternatives.match': 'Ship ID must be a valid UUID or OFFICE',
     }),
   search: Joi.string()
     .min(1)

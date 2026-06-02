@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const asyncHandler = require('../../utils/asyncHandler');
 const validate = require('../../middlewares/validate.middleware');
@@ -13,7 +13,7 @@ router.use(authenticate);
 // GET /api/ships - Get all ships (MANAGER and above)
 router.get(
   '/',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   validate(shipQuerySchema, 'query'),
   asyncHandler(shipsController.getAllShips)
 );
@@ -21,14 +21,14 @@ router.get(
 // GET /api/ships/:id - Get ship by ID (MANAGER and above)
 router.get(
   '/:id',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   asyncHandler(shipsController.getShipById)
 );
 
 // GET /api/ships/:id/stats - Get ship statistics (MANAGER and above)
 router.get(
   '/:id/stats',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   asyncHandler(shipsController.getShipStats)
 );
 

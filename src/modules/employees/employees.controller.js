@@ -67,6 +67,33 @@ const getEmployeesByShip = async (req, res, next) => {
   }
 };
 
+const addDocument = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      const e = new Error('Document file is required'); e.statusCode = 400; throw e;
+    }
+    const { name } = req.body;
+    if (!name?.trim()) {
+      const e = new Error('Document name is required'); e.statusCode = 400; throw e;
+    }
+    const doc = await employeesService.addDocument(req.params.id, {
+      name: name.trim(),
+      fileUrl: `/uploads/${req.file.filename}`,
+      fileType: req.file.mimetype,
+      fileSize: req.file.size,
+      uploadedBy: req.user.id,
+    });
+    sendSuccess(res, doc, 'Document uploaded successfully', HTTP_STATUS.CREATED);
+  } catch (error) { next(error); }
+};
+
+const deleteDocument = async (req, res, next) => {
+  try {
+    await employeesService.deleteDocument(req.params.documentId);
+    sendSuccess(res, null, 'Document deleted successfully');
+  } catch (error) { next(error); }
+};
+
 module.exports = {
   createEmployee,
   getEmployees,
@@ -74,4 +101,6 @@ module.exports = {
   updateEmployee,
   deleteEmployee,
   getEmployeesByShip,
+  addDocument,
+  deleteDocument,
 };

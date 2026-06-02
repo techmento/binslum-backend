@@ -250,14 +250,14 @@ const createLoanPayment = async (paymentData) => {
       },
     });
 
-    // Update loan remaining balance
-    const newRemainingBalance = loan.remainingBalance - amountPaid;
+    // Update loan remaining balance (parseFloat handles Prisma Decimal → number)
+    const newRemainingBalance = Math.max(0, parseFloat(loan.remainingBalance.toString()) - parseFloat(amountPaid.toString()));
     const newStatus = newRemainingBalance <= 0 ? LOAN_STATUS.PAID_OFF : LOAN_STATUS.ACTIVE;
 
     await tx.loan.update({
       where: { id: loanId },
       data: {
-        remainingBalance: Math.max(0, newRemainingBalance),
+        remainingBalance: newRemainingBalance,
         status: newStatus,
       },
     });

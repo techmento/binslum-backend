@@ -374,10 +374,213 @@ const getLoanReport = async () => {
   };
 };
 
+const getFinancialSummary = async (query) => {
+  const { period, year, month, shipId } = query;
+
+  // Build date range from period selector
+  let startDate, endDate;
+  const now = new Date();
+
+  if (period === 'month' && year && month) {
+    startDate = new Date(year, month - 1, 1);
+    endDate   = new Date(year, month, 0, 23, 59, 59);
+  } else if (period === 'year' && year) {
+    startDate = new Date(year, 0, 1);
+    endDate   = new Date(year, 11, 31, 23, 59, 59);
+  } else if (period === 'ytd') {
+    startDate = new Date(now.getFullYear(), 0, 1);
+    endDate   = now;
+  } else if (period === 'q1') {
+    startDate = new Date(now.getFullYear(), 0, 1);
+    endDate   = new Date(now.getFullYear(), 2, 31, 23, 59, 59);
+  } else if (period === 'q2') {
+    startDate = new Date(now.getFullYear(), 3, 1);
+    endDate   = new Date(now.getFullYear(), 5, 30, 23, 59, 59);
+  } else if (period === 'q3') {
+    startDate = new Date(now.getFullYear(), 6, 1);
+    endDate   = new Date(now.getFullYear(), 8, 30, 23, 59, 59);
+  } else if (period === 'q4') {
+    startDate = new Date(now.getFullYear(), 9, 1);
+    endDate   = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+  } else if (period === 'custom' && query.startDate && query.endDate) {
+    startDate = new Date(query.startDate);
+    endDate   = new Date(query.endDate);
+  } else {
+    // Default: current year
+    startDate = new Date(now.getFullYear(), 0, 1);
+    endDate   = now;
+  }
+
+  const dateWhere = { date: { gte: startDate, lte: endDate } };
+  const baseWhere = shipId ? { ...dateWhere, shipId } : dateWhere;
+  const expBaseWhere = shipId ? { ...dateWhere, shipId } : dateWhere;
+
+  // ── Previous period (same length) for YoY/MoM comparison ──
+  const periodMs = endDate - startDate;
+  const prevStart = new Date(startDate - periodMs);
+  const prevEnd   = new Date(startDate - 1);
+  const prevDateWhere = { date: { gte: prevStart, lte: prevEnd } };
+  const prevBaseWhere = shipId ? { ...prevDateWhere, shipId } : prevDateWhere;
+
+  const [
+    incomeAgg, expenseAgg,
+    prevIncomeAgg, prevExpenseAgg,
+    incomeByType, expenseByCategory,
+    salaryAgg, loanAgg,
+    shipIncome, shipExpense,
+    loans,
+  ] = await Promise.all([
+    prisma.incomeRecord.aggregate({ where: baseWhere, _sum: { amount: true }, _count: true }),
+    prisma.expenseRecord.aggregate({ where: expBaseWhere, _sum: { amount: true }, _count: true }),
+    prisma.incomeRecord.aggregate({ where: prevBaseWhere, _sum: { amount: true } }),
+    prisma.expenseRecord.aggregate({ where: prevBaseWhere, _sum: { amount: true } }),
+    prisma.incomeRecord.groupBy({ by: ['type'], where: baseWhere, _sum: { amount: true }, _count: true }),
+    prisma.expenseRecord.groupBy({ by: ['category'], where: expBaseWhere, _sum: { amount: true }, _count: true, orderBy: { _sum: { amount: 'desc' } } }),
+    prisma.expenseRecord.aggregate({ where: { ...expBaseWhere, category: 'SALARY' }, _sum: { amount: true } }),
+    prisma.expenseRecord.aggregate({ where: { ...expBaseWhere, category: 'LOAN_REPAYMENT' }, _sum: { amount: true } }),
+    prisma.incomeRecord.groupBy({ by: ['shipId'], where: baseWhere, _sum: { amount: true } }),
+    prisma.expenseRecord.groupBy({ by: ['shipId'], where: expBaseWhere, _sum: { amount: true } }),
+    prisma.loan.findMany({ select: { id: true, bankName: true, totalAmount: true, remainingBalance: true, monthlyPayment: true, status: true } }),
+  ]);
+
+  // Monthly trend for the period — separate queries to avoid raw SQL interpolation issues
+  const [trendIncome, trendExpense] = await Promise.all([
+    prisma.incomeRecord.groupBy({
+      by: ['date'],
+      where: baseWhere,
+      _sum: { amount: true },
+    }),
+    prisma.expenseRecord.groupBy({
+      by: ['date'],
+      where: expBaseWhere,
+      _sum: { amount: true },
+    }),
+  ]);
+
+  // Aggregate by month
+  const monthMap = {};
+  trendIncome.forEach(r => {
+    const m = new Date(r.date).toISOString().substring(0, 7);
+    if (!monthMap[m]) monthMap[m] = { month: m, income: 0, expense: 0 };
+    monthMap[m].income += parseFloat(r._sum.amount?.toString() || '0');
+  });
+  trendExpense.forEach(r => {
+    const m = new Date(r.date).toISOString().substring(0, 7);
+    if (!monthMap[m]) monthMap[m] = { month: m, income: 0, expense: 0 };
+    monthMap[m].expense += parseFloat(r._sum.amount?.toString() || '0');
+  });
+  const monthlyTrend = Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month));
+
+  // Ship details lookup
+  const allShips = await prisma.ship.findMany({ select: { id: true, name: true, registrationNumber: true, status: true } });
+  const shipMap = Object.fromEntries(allShips.map(s => [s.id, s]));
+
+  const totalIncome   = parseFloat(incomeAgg._sum.amount?.toString() || '0');
+  const totalExpenses = parseFloat(expenseAgg._sum.amount?.toString() || '0');
+  const netProfit     = totalIncome - totalExpenses;
+  const prevIncome    = parseFloat(prevIncomeAgg._sum.amount?.toString() || '0');
+  const prevExpenses  = parseFloat(prevExpenseAgg._sum.amount?.toString() || '0');
+  const prevProfit    = prevIncome - prevExpenses;
+
+  const pct = (curr, prev) =>
+    prev === 0 ? null : Math.round(((curr - prev) / Math.abs(prev)) * 1000) / 10;
+
+  // Outstanding loan obligations
+  const activeLoans = loans.filter(l => l.status === 'ACTIVE');
+  const totalLoanRemaining = activeLoans.reduce((s, l) => s + parseFloat(l.remainingBalance.toString()), 0);
+  const totalLoanBorrowed  = loans.reduce((s, l) => s + parseFloat(l.totalAmount.toString()), 0);
+  const totalLoanPaid      = loans.reduce((s, l) => s + parseFloat(l.totalAmount.toString()) - parseFloat(l.remainingBalance.toString()), 0);
+  const monthlyLoanObligation = activeLoans.reduce((s, l) => s + parseFloat(l.monthlyPayment.toString()), 0);
+
+  // Ship P&L matrix
+  const incomeByShip  = Object.fromEntries(shipIncome.map(r => [r.shipId, parseFloat(r._sum.amount?.toString() || '0')]));
+  const expenseByShip = Object.fromEntries(shipExpense.map(r => [r.shipId, parseFloat(r._sum.amount?.toString() || '0')]));
+  const shipPnl = allShips.map(ship => ({
+    ship,
+    income:   incomeByShip[ship.id]  || 0,
+    expenses: expenseByShip[ship.id] || 0,
+    profit:   (incomeByShip[ship.id] || 0) - (expenseByShip[ship.id] || 0),
+    margin:   (incomeByShip[ship.id] || 0) > 0
+      ? (((incomeByShip[ship.id] || 0) - (expenseByShip[ship.id] || 0)) / (incomeByShip[ship.id] || 0)) * 100
+      : 0,
+  })).sort((a, b) => b.profit - a.profit);
+
+  // Expense category detail
+  const totalExp = expenseByCategory.reduce((s, c) => s + parseFloat(c._sum.amount?.toString() || '0'), 0);
+  const expCategories = expenseByCategory.map(c => ({
+    category:   c.category,
+    count:      c._count,
+    amount:     parseFloat(c._sum.amount?.toString() || '0'),
+    percentage: totalExp > 0 ? Math.round((parseFloat(c._sum.amount?.toString() || '0') / totalExp) * 1000) / 10 : 0,
+  }));
+
+  // Income breakdown
+  const incCategories = incomeByType.map(i => ({
+    type:       i.type,
+    count:      i._count,
+    amount:     parseFloat(i._sum.amount?.toString() || '0'),
+    percentage: totalIncome > 0 ? Math.round((parseFloat(i._sum.amount?.toString() || '0') / totalIncome) * 1000) / 10 : 0,
+  }));
+
+  return {
+    period:  { startDate, endDate, label: period },
+    summary: {
+      totalIncome,
+      totalExpenses,
+      netProfit,
+      profitMargin:   totalIncome > 0 ? Math.round((netProfit / totalIncome) * 1000) / 10 : 0,
+      expenseRatio:   totalIncome > 0 ? Math.round((totalExpenses / totalIncome) * 1000) / 10 : 0,
+      incomeCount:    incomeAgg._count,
+      expenseCount:   expenseAgg._count,
+      salaryExpenses: parseFloat(salaryAgg._sum.amount?.toString() || '0'),
+      loanRepayments: parseFloat(loanAgg._sum.amount?.toString() || '0'),
+      operatingExpenses: totalExpenses
+        - parseFloat(salaryAgg._sum.amount?.toString() || '0')
+        - parseFloat(loanAgg._sum.amount?.toString() || '0'),
+    },
+    comparison: {
+      prevIncome,
+      prevExpenses,
+      prevProfit,
+      incomePct:  pct(totalIncome, prevIncome),
+      expensePct: pct(totalExpenses, prevExpenses),
+      profitPct:  pct(netProfit, prevProfit),
+    },
+    loans: {
+      total:             loans.length,
+      active:            activeLoans.length,
+      totalBorrowed:     totalLoanBorrowed,
+      totalPaid:         totalLoanPaid,
+      totalRemaining:    totalLoanRemaining,
+      monthlyObligation: monthlyLoanObligation,
+      debtToIncome:      totalIncome > 0 ? Math.round((totalLoanRemaining / totalIncome) * 1000) / 10 : null,
+      items:             loans.map(l => ({
+        ...l,
+        totalAmount:      parseFloat(l.totalAmount.toString()),
+        remainingBalance: parseFloat(l.remainingBalance.toString()),
+        monthlyPayment:   parseFloat(l.monthlyPayment.toString()),
+        paidPct: parseFloat(l.totalAmount.toString()) > 0
+          ? Math.round(((parseFloat(l.totalAmount.toString()) - parseFloat(l.remainingBalance.toString())) / parseFloat(l.totalAmount.toString())) * 1000) / 10
+          : 0,
+      })),
+    },
+    incomeBreakdown:  incCategories,
+    expenseBreakdown: expCategories,
+    shipPnl,
+    monthlyTrend: monthlyTrend.map(r => ({
+      month:   r.month,
+      income:  parseFloat(r.income.toString()),
+      expense: parseFloat(r.expense.toString()),
+      profit:  parseFloat(r.income.toString()) - parseFloat(r.expense.toString()),
+    })),
+  };
+};
+
 module.exports = {
   getProfitLossReport,
   getShipPerformanceReport,
   getExpenseAnalysisReport,
   getIncomeAnalysisReport,
   getLoanReport,
+  getFinancialSummary,
 };

@@ -4,10 +4,17 @@ const expenseService = require('./expenses.service');
 
 const createExpense = async (req, res, next) => {
   try {
+    // Check if receipt file is provided
+    if (!req.file) {
+      const error = new Error('Receipt file is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
     const expenseData = {
       ...req.body,
       createdBy: req.user.id,
-      receiptUrl: req.file ? `/uploads/${req.file.filename}` : null,
+      receiptUrl: `/uploads/${req.file.filename}`,
     };
 
     const expense = await expenseService.createExpense(expenseData);
@@ -71,6 +78,35 @@ const getExpenseCategories = async (req, res, next) => {
   }
 };
 
+const createCustomCategory = async (req, res, next) => {
+  try {
+    const { name, label, color, fade, border } = req.body;
+
+    const categoryData = {
+      name,
+      label,
+      color,
+      fade,
+      border,
+      createdBy: req.user.id,
+    };
+
+    const newCategory = await expenseService.createCustomCategory(categoryData);
+    sendSuccess(res, newCategory, 'Custom category created successfully', HTTP_STATUS.CREATED);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getCustomCategories = async (req, res, next) => {
+  try {
+    const customCategories = await expenseService.getCustomCategories();
+    sendSuccess(res, customCategories, 'Custom categories retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createExpense,
   getExpenses,
@@ -78,4 +114,6 @@ module.exports = {
   updateExpense,
   deleteExpense,
   getExpenseCategories,
+  createCustomCategory,
+  getCustomCategories,
 };

@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const asyncHandler = require('../../utils/asyncHandler');
 const validate = require('../../middlewares/validate.middleware');
@@ -18,7 +18,7 @@ router.use(authenticate);
 // GET /api/reports/profit-loss - Profit & Loss report (MANAGER and above)
 router.get(
   '/profit-loss',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   validate(reportQuerySchema, 'query'),
   asyncHandler(reportsController.getProfitLossReport)
 );
@@ -26,7 +26,7 @@ router.get(
 // GET /api/reports/ship-performance - Ship performance report (MANAGER and above)
 router.get(
   '/ship-performance',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   validate(shipPerformanceQuerySchema, 'query'),
   asyncHandler(reportsController.getShipPerformanceReport)
 );
@@ -52,6 +52,13 @@ router.get(
   '/loans',
   authorize(['ADMIN', 'ACCOUNTANT']),
   asyncHandler(reportsController.getLoanReport)
+);
+
+// GET /api/reports/financial-summary - Comprehensive financial summary
+router.get(
+  '/financial-summary',
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
+  asyncHandler(reportsController.getFinancialSummary)
 );
 
 module.exports = router;

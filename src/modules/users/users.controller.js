@@ -57,10 +57,18 @@ const softDeleteUser = async (req, res, next) => {
   }
 };
 
-module.exports = {
-  createUser,
-  getAllUsers,
-  getUserById,
-  updateUser,
-  softDeleteUser,
+const activateUser = async (req, res, next) => {
+  try {
+    const user = await usersService.activateUser(req.params.id);
+    sendSuccess(res, user, 'User activated successfully');
+  } catch (error) { next(error); }
 };
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const user = await usersService.resetPassword(req.params.id, req.body.newPassword);
+    sendSuccess(res, user, 'Password reset successfully');
+  } catch (error) { next(error); }
+};
+
+module.exports = { createUser, getAllUsers, getUserById, updateUser, softDeleteUser, activateUser, resetPassword };

@@ -15,6 +15,7 @@ enum UserRole {
   ADMIN
   ACCOUNTANT
   MANAGER
+  VIEWER
 }
 
 enum ShipStatus {
@@ -28,18 +29,7 @@ enum IncomeType {
   DELIVERY_ORDER
 }
 
-enum ExpenseCategory {
-  MARINE_BILLS
-  SALARY
-  MAINTENANCE_REPAIR
-  FUEL_COST
-  FOOD_GROCERY
-  PORT_CASH
-  ZMA_BILLS
-  LOAN_REPAYMENT
-  ADMINISTRATION_COST
-  OTHER_COST
-}
+
 
 enum PaymentMethod {
   CASH
@@ -50,6 +40,12 @@ enum PaymentMethod {
 enum LoanStatus {
   ACTIVE
   PAID_OFF
+}
+
+enum SalaryPaymentType {
+  FULL
+  PARTIAL
+  BONUS
 }
 
 // Models
@@ -64,11 +60,17 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  incomeRecords  IncomeRecord[]
-  expenseRecords ExpenseRecord[]
-  loans          Loan[]
-  loanPayments   LoanPayment[]
-  payrolls       Payroll[]
+  incomeRecords          IncomeRecord[]
+  expenseRecords         ExpenseRecord[]
+  loans                  Loan[]
+  loanPayments           LoanPayment[]
+  payrolls               Payroll[]
+  customExpenseCategories CustomExpenseCategory[]
+  salaryRecords          SalaryRecord[]
+  salaryPayments         SalaryPayment[]
+  salaryBonuses          SalaryBonus[]
+  salaryDeductions       SalaryDeduction[]
+  employeeDocuments      EmployeeDocument[]
 
   @@map("users")
 }
@@ -92,9 +94,10 @@ model Ship {
 
 model Employee {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shipId     String   @map("ship_id") @db.Uuid
+  shipId     String?  @map("ship_id") @db.Uuid
   name       String   @db.VarChar(150)
   role       String   @db.VarChar(100)
+  phone      String?  @db.VarChar(30)
   baseSalary Decimal  @map("base_salary") @db.Decimal(12, 2)
   allowances Decimal  @default(0) @db.Decimal(12, 2)
   deductions Decimal  @default(0) @db.Decimal(12, 2)
@@ -104,12 +107,31 @@ model Employee {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   // Relations
-  ship           Ship           @relation(fields: [shipId], references: [id])
+  ship           Ship?              @relation(fields: [shipId], references: [id])
   expenseRecords ExpenseRecord[]
   payrollEntries PayrollEntry[]
+  salaryRecords  SalaryRecord[]
+  documents      EmployeeDocument[]
 
   @@index([shipId])
   @@map("employees")
+}
+
+model EmployeeDocument {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId   String   @map("employee_id") @db.Uuid
+  name         String   @db.VarChar(200)
+  fileUrl      String   @map("file_url") @db.VarChar(500)
+  fileType     String?  @map("file_type") @db.VarChar(50)
+  fileSize     Int?     @map("file_size")
+  uploadedBy   String   @map("uploaded_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  uploader User     @relation(fields: [uploadedBy], references: [id])
+
+  @@index([employeeId])
+  @@map("employee_documents")
 }
 
 model IncomeRecord {
@@ -134,8 +156,8 @@ model IncomeRecord {
 
 model ExpenseRecord {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shipId       String   @map("ship_id") @db.Uuid
-  category     ExpenseCategory
+  shipId       String?  @map("ship_id") @db.Uuid
+  category     String @db.VarChar(100)
   amount       Decimal  @db.Decimal(14, 2)
   date         DateTime @db.Date
   paymentMethod PaymentMethod @map("payment_method")
@@ -143,12 +165,14 @@ model ExpenseRecord {
   receiptUrl   String?  @db.VarChar(500) @map("receipt_url")
   employeeId   String?  @map("employee_id") @db.Uuid
   loanPaymentId String? @map("loan_payment_id") @db.Uuid
+  salaryPaymentType SalaryPaymentType? @map("salary_payment_type")
+  salaryMonth  DateTime? @db.Date @map("salary_month")
   createdBy    String   @map("created_by") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  ship        Ship        @relation(fields: [shipId], references: [id])
+  ship        Ship?       @relation(fields: [shipId], references: [id])
   employee    Employee?   @relation(fields: [employeeId], references: [id])
   loanPayment LoanPayment? @relation(fields: [loanPaymentId], references: [id])
   creator     User        @relation(fields: [createdBy], references: [id])
@@ -156,6 +180,7 @@ model ExpenseRecord {
   @@index([shipId])
   @@index([shipId, category])
   @@index([shipId, date])
+  @@index([employeeId, salaryMonth])
   @@map("expense_records")
 }
 
@@ -238,4 +263,119 @@ model PayrollEntry {
   @@index([payrollId])
   @@index([employeeId])
   @@map("payroll_entries")
+}
+
+enum SalaryStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum DeductionReason {
+  LOAN
+  SALARY_ADVANCE
+  TAX_ADJUSTMENT
+  ABSENCE
+  LATE_ATTENDANCE
+  PROPERTY_DAMAGE
+  OTHER
+}
+
+model SalaryRecord {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String       @map("employee_id") @db.Uuid
+  salaryYear      Int          @map("salary_year")
+  salaryMonth     Int          @map("salary_month")
+  grossSalary     Decimal      @map("gross_salary") @db.Decimal(14, 2)
+  totalDeductions Decimal      @default(0) @map("total_deductions") @db.Decimal(14, 2)
+  netSalary       Decimal      @map("net_salary") @db.Decimal(14, 2)
+  amountPaid      Decimal      @default(0) @map("amount_paid") @db.Decimal(14, 2)
+  status          SalaryStatus @default(UNPAID)
+  notes           String?      @db.Text
+  createdBy       String       @map("created_by") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  employee   Employee         @relation(fields: [employeeId], references: [id])
+  creator    User             @relation(fields: [createdBy], references: [id])
+  payments   SalaryPayment[]
+  bonuses    SalaryBonus[]
+  deductions SalaryDeduction[]
+
+  @@unique([employeeId, salaryYear, salaryMonth])
+  @@index([employeeId])
+  @@index([salaryYear, salaryMonth])
+  @@index([status])
+  @@map("salary_records")
+}
+
+model SalaryPayment {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaryRecordId String   @map("salary_record_id") @db.Uuid
+  amount         Decimal  @db.Decimal(14, 2)
+  paymentDate    DateTime @map("payment_date") @db.Date
+  paymentMethod  PaymentMethod @map("payment_method")
+  receiptUrl     String?  @map("receipt_url") @db.VarChar(500)
+  notes          String?  @db.Text
+  createdBy      String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  salaryRecord SalaryRecord @relation(fields: [salaryRecordId], references: [id], onDelete: Cascade)
+  creator      User         @relation(fields: [createdBy], references: [id])
+
+  @@index([salaryRecordId])
+  @@map("salary_payments")
+}
+
+model SalaryBonus {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaryRecordId String   @map("salary_record_id") @db.Uuid
+  amount         Decimal  @db.Decimal(14, 2)
+  reason         String   @db.VarChar(300)
+  bonusDate      DateTime @map("bonus_date") @db.Date
+  paymentMethod  PaymentMethod @map("payment_method")
+  receiptUrl     String?  @map("receipt_url") @db.VarChar(500)
+  createdBy      String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  salaryRecord SalaryRecord @relation(fields: [salaryRecordId], references: [id], onDelete: Cascade)
+  creator      User         @relation(fields: [createdBy], references: [id])
+
+  @@index([salaryRecordId])
+  @@map("salary_bonuses")
+}
+
+model SalaryDeduction {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaryRecordId String          @map("salary_record_id") @db.Uuid
+  amount         Decimal         @db.Decimal(14, 2)
+  reason         DeductionReason
+  notes          String?         @db.Text
+  deductionDate  DateTime        @map("deduction_date") @db.Date
+  createdBy      String          @map("created_by") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  salaryRecord SalaryRecord @relation(fields: [salaryRecordId], references: [id], onDelete: Cascade)
+  creator      User         @relation(fields: [createdBy], references: [id])
+
+  @@index([salaryRecordId])
+  @@map("salary_deductions")
+}
+
+model CustomExpenseCategory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique @db.VarChar(100)
+  label     String   @db.VarChar(150)
+  color     String   @default("#7C3AED") @db.VarChar(20)
+  fade      String   @default("#F5F3FF") @db.VarChar(20)
+  border    String   @default("#DDD6FE") @db.VarChar(20)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@map("custom_expense_categories")
 }

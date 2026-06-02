@@ -3,6 +3,7 @@ const USER_ROLES = {
   ADMIN: 'ADMIN',
   ACCOUNTANT: 'ACCOUNTANT',
   MANAGER: 'MANAGER',
+  VIEWER: 'VIEWER',
 };
 
 // Ship Status

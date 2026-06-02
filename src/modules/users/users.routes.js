@@ -5,7 +5,7 @@ const validate = require('../../middlewares/validate.middleware');
 const authenticate = require('../../middlewares/auth.middleware');
 const authorize = require('../../middlewares/role.middleware');
 const usersController = require('./users.controller');
-const { createUserSchema, updateUserSchema } = require('./users.validation');
+const { createUserSchema, updateUserSchema, resetPasswordSchema } = require('./users.validation');
 
 // All routes require authentication
 router.use(authenticate);
@@ -40,11 +40,26 @@ router.put(
   asyncHandler(usersController.updateUser)
 );
 
-// DELETE /api/users/:id - Soft delete user (ADMIN only)
+// DELETE /api/users/:id - Deactivate user (ADMIN only)
 router.delete(
   '/:id',
   authorize(['ADMIN']),
   asyncHandler(usersController.softDeleteUser)
+);
+
+// PATCH /api/users/:id/activate - Activate user (ADMIN only)
+router.patch(
+  '/:id/activate',
+  authorize(['ADMIN']),
+  asyncHandler(usersController.activateUser)
+);
+
+// PATCH /api/users/:id/reset-password - Reset password (ADMIN only)
+router.patch(
+  '/:id/reset-password',
+  authorize(['ADMIN']),
+  validate(resetPasswordSchema),
+  asyncHandler(usersController.resetPassword)
 );
 
 module.exports = router;

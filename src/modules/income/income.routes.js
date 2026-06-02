@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const asyncHandler = require('../../utils/asyncHandler');
 const validate = require('../../middlewares/validate.middleware');
@@ -16,7 +16,7 @@ router.get('/types', authorize(['ADMIN', 'ACCOUNTANT']), asyncHandler(incomeCont
 // GET /api/income/summary - Get income summary (MANAGER and above)
 router.get(
   '/summary',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   validate(incomeQuerySchema, 'query'),
   asyncHandler(incomeController.getIncomeSummary)
 );
@@ -24,7 +24,7 @@ router.get(
 // GET /api/income - Get incomes with filtering (MANAGER and above)
 router.get(
   '/',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   validate(incomeQuerySchema, 'query'),
   asyncHandler(incomeController.getIncomes)
 );
@@ -32,7 +32,7 @@ router.get(
 // GET /api/income/:id - Get income by ID (MANAGER and above)
 router.get(
   '/:id',
-  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER']),
+  authorize(['ADMIN', 'ACCOUNTANT', 'MANAGER', 'VIEWER']),
   asyncHandler(incomeController.getIncomeById)
 );
 

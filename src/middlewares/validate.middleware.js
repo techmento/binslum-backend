@@ -1,11 +1,11 @@
-const Joi = require('joi');
 const { HTTP_STATUS } = require('../config/constants');
 
-const validate = (schema) => {
+const validate = (schema, source = 'body') => {
   return (req, res, next) => {
-    const { error, value } = schema.validate(req.body, {
+    const { error, value } = schema.validate(req[source], {
       abortEarly: false,
       stripUnknown: true,
+      convert: true, // converts FormData strings: "123.45" → 123.45, "2024-01-15" → Date
     });
 
     if (error) {
@@ -21,7 +21,7 @@ const validate = (schema) => {
       });
     }
 
-    req.body = value;
+    req[source] = value;
     next();
   };
 };
