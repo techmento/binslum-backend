@@ -1,7 +1,7 @@
 {
   "root": ".",
   "build": {
-    "install": "npm install",
+    "install": "npm install && npx prisma generate",
     "start": "node src/server.js"
   }
 }
