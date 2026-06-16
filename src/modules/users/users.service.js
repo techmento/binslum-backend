@@ -15,7 +15,14 @@ const createUser = async (data) => {
 
 const getAllUsers = async (query) => {
   const where = {};
-  if (query.role) where.role = query.role;
+  
+  // Exclude SUPER_ADMIN, but allow explicit role filtering for other roles
+  if (query.role && query.role !== 'SUPER_ADMIN') {
+    where.role = query.role;
+  } else {
+    where.role = { not: 'SUPER_ADMIN' };
+  }
+  
   if (query.is_active !== undefined) where.isActive = query.is_active === 'true';
   const [users, total] = await Promise.all([
     prisma.user.findMany({ where, select: userSelect, orderBy: { createdAt: 'desc' }, take: query.limit, skip: query.skip }),

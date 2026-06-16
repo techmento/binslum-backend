@@ -12,6 +12,7 @@ datasource db {
 
 // Enums
 enum UserRole {
+  SUPER_ADMIN
   ADMIN
   ACCOUNTANT
   MANAGER
@@ -56,6 +57,8 @@ model User {
   passwordHash String  @map("password_hash") @db.VarChar(255)
   role      UserRole @default(ACCOUNTANT)
   isActive  Boolean  @default(true) @map("is_active")
+  passwordResetToken String?  @map("password_reset_token") @db.VarChar(255)
+  passwordResetExpires DateTime? @map("password_reset_expires")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

@@ -17,6 +17,7 @@ const expenseRoutes = require('./modules/expenses/expenses.routes');
 const loanRoutes = require('./modules/loans/loans.routes');
 const reportRoutes = require('./modules/reports/reports.routes');
 const salaryRoutes = require('./modules/salary/salary.routes');
+const adminRoutes = require('./modules/admin/admin.routes');
 
 const app = express();
 
@@ -59,6 +60,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/salary', salaryRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Multer error handling
 app.use(multerErrorHandler);

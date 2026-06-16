@@ -4,7 +4,7 @@ const asyncHandler = require('../../utils/asyncHandler');
 const validate = require('../../middlewares/validate.middleware');
 const authenticate = require('../../middlewares/auth.middleware');
 const authController = require('./auth.controller');
-const { loginSchema } = require('./auth.validation');
+const { loginSchema, forgotPasswordSchema, resetPasswordSchema } = require('./auth.validation');
 
 // POST /api/auth/login - Authenticate user (no auth required)
 router.post(
@@ -18,6 +18,20 @@ router.get(
   '/me',
   authenticate,
   asyncHandler(authController.getCurrentUser)
+);
+
+// POST /api/auth/forgot-password - Request password reset email (no auth required)
+router.post(
+  '/forgot-password',
+  validate(forgotPasswordSchema),
+  asyncHandler(authController.forgotPassword)
+);
+
+// POST /api/auth/reset-password - Reset password with token (no auth required)
+router.post(
+  '/reset-password',
+  validate(resetPasswordSchema),
+  asyncHandler(authController.resetPassword)
 );
 
 module.exports = router;

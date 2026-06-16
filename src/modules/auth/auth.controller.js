@@ -13,7 +13,21 @@ const getCurrentUser = async (req, res, next) => {
   sendSuccess(res, user, 'User profile retrieved', HTTP_STATUS.OK);
 };
 
+const forgotPassword = async (req, res, next) => {
+  const { email } = req.body;
+  const result = await authService.forgotPassword(email);
+  sendSuccess(res, result, result.message, HTTP_STATUS.OK);
+};
+
+const resetPassword = async (req, res, next) => {
+  const { token, password } = req.body;
+  const result = await authService.resetPassword(token, password);
+  sendSuccess(res, result, result.message, HTTP_STATUS.OK);
+};
+
 module.exports = {
   login,
   getCurrentUser,
+  forgotPassword,
+  resetPassword,
 };
